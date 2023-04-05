@@ -1,0 +1,938 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.3.290">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+<meta name="author" content="MPI-BGC (Integration department)">
+<meta name="dcterms.date" content="2023-04-01">
+
+<title>Understanding Chunking and Rechunking</title>
+<style>
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: min(4vw, 1.5em);}
+div.column{flex: auto; overflow-x: auto;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+/* CSS for syntax highlighting */
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+</style>
+
+
+<script src="chunking_demo_files/libs/clipboard/clipboard.min.js"></script>
+<script src="chunking_demo_files/libs/quarto-html/quarto.js"></script>
+<script src="chunking_demo_files/libs/quarto-html/popper.min.js"></script>
+<script src="chunking_demo_files/libs/quarto-html/tippy.umd.min.js"></script>
+<script src="chunking_demo_files/libs/quarto-html/anchor.min.js"></script>
+<link href="chunking_demo_files/libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="chunking_demo_files/libs/quarto-html/quarto-syntax-highlighting.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="chunking_demo_files/libs/bootstrap/bootstrap.min.js"></script>
+<link href="chunking_demo_files/libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="chunking_demo_files/libs/bootstrap/bootstrap.min.css" rel="stylesheet" id="quarto-bootstrap" data-mode="light">
+
+
+</head>
+
+<body>
+
+<div id="quarto-content" class="page-columns page-rows-contents page-layout-article">
+<div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
+  <nav id="TOC" role="doc-toc" class="toc-active" data-toc-expanded="1">
+    <h2 id="toc-title">Table of contents</h2>
+   
+  <ul>
+  <li><a href="#introduction" id="toc-introduction" class="nav-link active" data-scroll-target="#introduction">Introduction</a></li>
+  <li><a href="#data-exploration" id="toc-data-exploration" class="nav-link" data-scroll-target="#data-exploration">Data exploration</a>
+  <ul class="collapse">
+  <li><a href="#plots" id="toc-plots" class="nav-link" data-scroll-target="#plots">Plots</a></li>
+  <li><a href="#chunks-overview" id="toc-chunks-overview" class="nav-link" data-scroll-target="#chunks-overview">Chunks overview</a></li>
+  <li><a href="#access-timing" id="toc-access-timing" class="nav-link" data-scroll-target="#access-timing">Access timing</a></li>
+  </ul></li>
+  <li><a href="#statistical-computation" id="toc-statistical-computation" class="nav-link" data-scroll-target="#statistical-computation">Statistical computation</a>
+  <ul class="collapse">
+  <li><a href="#mean" id="toc-mean" class="nav-link" data-scroll-target="#mean">Mean</a>
+  <ul class="collapse">
+  <li><a href="#mean-by-pixel" id="toc-mean-by-pixel" class="nav-link" data-scroll-target="#mean-by-pixel">Mean by pixel</a></li>
+  <li><a href="#mean-by-time-step" id="toc-mean-by-time-step" class="nav-link" data-scroll-target="#mean-by-time-step">Mean by time step</a></li>
+  </ul></li>
+  <li><a href="#median" id="toc-median" class="nav-link" data-scroll-target="#median">Median</a>
+  <ul class="collapse">
+  <li><a href="#median-by-pixel" id="toc-median-by-pixel" class="nav-link" data-scroll-target="#median-by-pixel">Median by pixel</a></li>
+  </ul></li>
+  </ul></li>
+  </ul>
+</nav>
+</div>
+<main class="content page-columns page-full" id="quarto-document-content">
+
+<header id="title-block-header" class="quarto-title-block default">
+<div class="quarto-title">
+<h1 class="title">Understanding Chunking and Rechunking</h1>
+<p class="subtitle lead">Chunking demo for Edu Pilot</p>
+</div>
+
+
+
+<div class="quarto-title-meta">
+
+    <div>
+    <div class="quarto-title-meta-heading">Author</div>
+    <div class="quarto-title-meta-contents">
+             <p>MPI-BGC (Integration department) </p>
+          </div>
+  </div>
+    
+    <div>
+    <div class="quarto-title-meta-heading">Published</div>
+    <div class="quarto-title-meta-contents">
+      <p class="date">April 1, 2023</p>
+    </div>
+  </div>
+  
+    
+  </div>
+  
+
+</header>
+
+<section id="introduction" class="level1">
+<h1>Introduction</h1>
+<p>In this notebook you will learn how the chunking of the data set affects the reading and processing speed depending on data chunking and on the access patterns you need for your analysis.</p>
+<p>To start, chunking is important when working with datasets that do not fit into the memory which is often the case for climate and remote sensing data. This can severely limit the computation performance of data analysis due to the time to access, load and process the data. More information can be found at: <a href="https://biojulia.github.io/post/hardware/" class="uri">https://biojulia.github.io/post/hardware/</a></p>
+<p><strong>Task</strong>: Use your favorite NetCDF package and method to compute the a) mean and b) median per spatial pixel for the <em>air_temperature_2m</em> variable without loading the whole data set into memory (7 GB uncompressed file).</p>
+<p>For this tutorial, we will use two different chunk sizes of the same <em>air_temperature_2m</em> data set which has three dimensions (i.e., longitude, latitude, time). The files and chunks are:</p>
+<ul>
+<li><p><code>t2_map.nc</code>: This chunked file setting aims fast access to spatial layers i.e., grids in latitude and longitude</p></li>
+<li><p><code>t2_blocks.nc</code>: This chuncked file aims an intermediate access to both the spatial and temporal dimensions (box chunking)</p></li>
+</ul>
+</section>
+<section id="data-exploration" class="level1 page-columns page-full">
+<h1>Data exploration</h1>
+<p>Let’s launch Julia and explore the data</p>
+<div class="cell" data-execution_count="1">
+<div class="sourceCode cell-code" id="cb1"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>    <span class="co"># load environment</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    <span class="im">using</span> <span class="bu">Pkg</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    <span class="bu">Pkg</span>.<span class="fu">activate</span>(<span class="st">"."</span>)</span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    <span class="bu">Pkg</span>.<span class="fu">instantiate</span>()</span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>    <span class="co">#print(Pkg.status())</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>    <span class="co"># load libraries</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>   <span class="im">using</span> <span class="bu">NetCDF</span></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>   <span class="im">using</span> <span class="bu">DiskArrays</span>: eachchunk</span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a>   <span class="im">using</span> <span class="bu">DelimitedFiles</span></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a>    <span class="co"># set files location</span></span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a>    pathin <span class="op">=</span> <span class="fu">readdlm</span>(<span class="st">"mypahtfolder.txt"</span>)</span>
+<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a>    <span class="co"># load files metadata</span></span>
+<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a>    xmap0 <span class="op">=</span> NetCDF.<span class="fu">open</span>(<span class="fu">string</span>(pathin[<span class="fl">1</span>],<span class="st">"t2m_map.nc"</span>))</span>
+<span id="cb1-17"><a href="#cb1-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-18"><a href="#cb1-18" aria-hidden="true" tabindex="-1"></a>    <span class="co"># load files metadata</span></span>
+<span id="cb1-19"><a href="#cb1-19" aria-hidden="true" tabindex="-1"></a>    xbox0 <span class="op">=</span> NetCDF.<span class="fu">open</span>(<span class="fu">string</span>(pathin[<span class="fl">1</span>],<span class="st">"t2m_blocks.nc"</span>));</span>
+<span id="cb1-20"><a href="#cb1-20" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-21"><a href="#cb1-21" aria-hidden="true" tabindex="-1"></a>    <span class="co"># use the 'view' command to read the data indices</span></span>
+<span id="cb1-22"><a href="#cb1-22" aria-hidden="true" tabindex="-1"></a>    <span class="co"># instead of loading the data</span></span>
+<span id="cb1-23"><a href="#cb1-23" aria-hidden="true" tabindex="-1"></a>    xmap <span class="op">=</span> <span class="fu">view</span>(xmap0[<span class="st">"air_temperature_2m"</span>],<span class="op">:</span>,<span class="op">:</span>,<span class="op">:</span>)</span>
+<span id="cb1-24"><a href="#cb1-24" aria-hidden="true" tabindex="-1"></a>    xbox <span class="op">=</span> <span class="fu">view</span>(xbox0[<span class="st">"air_temperature_2m"</span>],<span class="op">:</span>,<span class="op">:</span>,<span class="op">:</span>);</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stderr">
+<pre><code>  Activating project at `~/quarto/NFDI4Earth/v002`</code></pre>
+</div>
+</div>
+<section id="plots" class="level2">
+<h2 class="anchored" data-anchor-id="plots">Plots</h2>
+<p>To get more familiar with the data let’s do a few plots.</p>
+<div class="cell" data-execution_count="2">
+<div class="sourceCode cell-code" id="cb3"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="co"># libraries for plotting</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="im">using</span> <span class="bu">Plots</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="im">using</span> <span class="bu">CFTime</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a><span class="im">using</span> <span class="bu">Dates</span></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a><span class="co"># load time axis</span></span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a>xmap0[<span class="st">"time"</span>].atts</span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a>timevalues <span class="op">=</span> <span class="fu">timedecode</span>(xmap0[<span class="st">"time"</span>][<span class="op">:</span>],xmap0[<span class="st">"time"</span>].atts[<span class="st">"units"</span>]);</span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a><span class="co"># load latitude and longitude values</span></span>
+<span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a>yaxisvalues<span class="op">=</span>xmap0[<span class="st">"lat"</span>][<span class="op">:</span>]</span>
+<span id="cb3-12"><a href="#cb3-12" aria-hidden="true" tabindex="-1"></a><span class="fu">size</span>(yaxisvalues)</span>
+<span id="cb3-13"><a href="#cb3-13" aria-hidden="true" tabindex="-1"></a>xaxisvalues<span class="op">=</span>xmap0[<span class="st">"lon"</span>][<span class="op">:</span>]</span>
+<span id="cb3-14"><a href="#cb3-14" aria-hidden="true" tabindex="-1"></a><span class="fu">size</span>(xaxisvalues)</span>
+<span id="cb3-15"><a href="#cb3-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-16"><a href="#cb3-16" aria-hidden="true" tabindex="-1"></a>varname <span class="op">=</span> <span class="st">"Air temperature at 2 m"</span>;</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+<div class="cell" data-execution_count="3">
+<div class="sourceCode cell-code" id="cb4"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="co">## map of air temperature at 2 m for the first time step</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="fu">heatmap</span>(xaxisvalues, yaxisvalues, xmap[<span class="op">:</span>,<span class="op">:</span>,<span class="fl">1</span>]<span class="ch">',</span></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>color<span class="op">=</span><span class="fu">cgrad</span>((<span class="op">:</span>roma), rev<span class="op">=</span><span class="cn">true</span>), xlabel<span class="op">=</span><span class="st">"Longitude"</span>, </span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>ylabel<span class="op">=</span><span class="st">"Latitude"</span>, zlabel<span class="op">=</span><span class="st">"Celsius degrees"</span>,</span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>xtickfont<span class="op">=</span><span class="fu">font</span>(<span class="fl">12</span>), ytickfont<span class="op">=</span><span class="fu">font</span>(<span class="fl">12</span>), </span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>guidefont<span class="op">=</span><span class="fu">font</span>(<span class="fl">16</span>))</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-display" data-execution_count="27">
+<div id="fig-t2m_map_day1" class="quarto-figure quarto-figure-center anchored">
+<figure class="figure">
+<p><img src="chunking_demo_files/figure-html/fig-t2m_map_day1-output-1.svg" class="quarto-discovered-preview-image img-fluid figure-img"></p>
+<p></p><figcaption class="figure-caption">Figure&nbsp;1: Global map of air temperature at 2 m on 05-Apr-1979. The color map shows the temperature in degrees Celsius.</figcaption><p></p>
+</figure>
+</div>
+</div>
+</div>
+<div class="cell" data-execution_count="4">
+<div class="sourceCode cell-code" id="cb5"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="co"># subset dates for plotting</span></span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>dict1 <span class="op">=</span> <span class="fu">Dict</span>(<span class="bu">Dates</span>.<span class="fu">value</span>(x) <span class="op">=&gt;</span> <span class="bu">Dates</span>.<span class="fu">format</span>(x, <span class="st">"u-yy"</span>) <span class="cf">for</span> x <span class="kw">in</span> timevalues)</span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>timesub <span class="op">=</span> timevalues[<span class="fl">1519</span><span class="op">:</span><span class="kw">end</span>] <span class="co">#subset for plotting</span></span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>t <span class="op">=</span> <span class="bu">Dates</span>.<span class="fu">value</span>.(timesub)</span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>dict2 <span class="op">=</span> <span class="fu">map</span>(x<span class="op">-&gt;</span>dict1[x],t);</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+<div class="cell" data-execution_count="5">
+<div class="sourceCode cell-code" id="cb6"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="co"># time series of air temperature at 2 m for </span></span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a><span class="co"># a pixel at 0° N 0° E</span></span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a><span class="fu">plot</span>(t, xmap[<span class="fl">720</span>,<span class="fl">360</span>,<span class="fl">1519</span><span class="op">:</span><span class="kw">end</span>], lw<span class="op">=</span><span class="fl">2</span>, color<span class="op">=:</span>purple, </span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a>legend<span class="op">=:</span><span class="cn">false</span>, ylim<span class="op">=</span>(<span class="fl">20</span>,<span class="fl">30</span>), ylabel<span class="op">=</span><span class="st">"Air temperature (°C)"</span>,</span>
+<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a>xticks<span class="op">=</span>(t[<span class="fl">1</span><span class="op">:</span><span class="fl">100</span><span class="op">:</span><span class="kw">end</span>],dict2[<span class="fl">1</span><span class="op">:</span><span class="fl">100</span><span class="op">:</span><span class="kw">end</span>]),</span>
+<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a>xlabel<span class="op">=</span><span class="st">"Time (MM-YY)"</span>, xtickfont<span class="op">=</span><span class="fu">font</span>(<span class="fl">12</span>), ytickfont<span class="op">=</span><span class="fu">font</span>(<span class="fl">12</span>),</span>
+<span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a>guidefont<span class="op">=</span><span class="fu">font</span>(<span class="fl">16</span>)) <span class="co"># location of tickmarks and values</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-display" data-execution_count="29">
+<div id="fig-ts_plot1" class="quarto-figure quarto-figure-center anchored">
+<figure class="figure">
+<p><img src="chunking_demo_files/figure-html/fig-ts_plot1-output-1.svg" class="img-fluid figure-img"></p>
+<p></p><figcaption class="figure-caption">Figure&nbsp;2: Time series of air temperature at 2 m at at 0° N 0° E from the Jan-2012 to Dec-21.</figcaption><p></p>
+</figure>
+</div>
+</div>
+</div>
+<p>As you might have noticed, displaying a single time series (<a href="#fig-ts_plot1">Figure&nbsp;2</a>) is much slower than producing a map (<a href="#fig-t2m_map_day1">Figure&nbsp;1</a>) when the spatial chunking is used.</p>
+</section>
+<section id="chunks-overview" class="level2 page-columns page-full">
+<h2 class="anchored" data-anchor-id="chunks-overview">Chunks overview</h2>
+<p>Now, we will access two different chunk file from the same <em>air_temperature_2m</em> data set and explore its properties</p>
+<div class="cell" data-execution_count="6">
+<div class="sourceCode cell-code" id="cb7"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="co"># with the 'eachchunk' command we visualize</span></span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a><span class="co"># the index range of each chunk</span></span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a><span class="fu">eachchunk</span>(xmap) <span class="co"># spatial chunk</span></span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a><span class="fu">eachchunk</span>(xbox) <span class="co"># intermediate chunk</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-display" data-execution_count="30">
+<pre><code>16×8×8 DiskArrays.GridChunks{3}:
+[:, :, 1] =
+ (1:90, 1:90, 1:256)       …  (1:90, 631:720, 1:256)
+ (91:180, 1:90, 1:256)        (91:180, 631:720, 1:256)
+ (181:270, 1:90, 1:256)       (181:270, 631:720, 1:256)
+ (271:360, 1:90, 1:256)       (271:360, 631:720, 1:256)
+ (361:450, 1:90, 1:256)       (361:450, 631:720, 1:256)
+ (451:540, 1:90, 1:256)    …  (451:540, 631:720, 1:256)
+ (541:630, 1:90, 1:256)       (541:630, 631:720, 1:256)
+ (631:720, 1:90, 1:256)       (631:720, 631:720, 1:256)
+ (721:810, 1:90, 1:256)       (721:810, 631:720, 1:256)
+ (811:900, 1:90, 1:256)       (811:900, 631:720, 1:256)
+ (901:990, 1:90, 1:256)    …  (901:990, 631:720, 1:256)
+ (991:1080, 1:90, 1:256)      (991:1080, 631:720, 1:256)
+ (1081:1170, 1:90, 1:256)     (1081:1170, 631:720, 1:256)
+ (1171:1260, 1:90, 1:256)     (1171:1260, 631:720, 1:256)
+ (1261:1350, 1:90, 1:256)     (1261:1350, 631:720, 1:256)
+ (1351:1440, 1:90, 1:256)  …  (1351:1440, 631:720, 1:256)
+
+[:, :, 2] =
+ (1:90, 1:90, 257:512)       …  (1:90, 631:720, 257:512)
+ (91:180, 1:90, 257:512)        (91:180, 631:720, 257:512)
+ (181:270, 1:90, 257:512)       (181:270, 631:720, 257:512)
+ (271:360, 1:90, 257:512)       (271:360, 631:720, 257:512)
+ (361:450, 1:90, 257:512)       (361:450, 631:720, 257:512)
+ (451:540, 1:90, 257:512)    …  (451:540, 631:720, 257:512)
+ (541:630, 1:90, 257:512)       (541:630, 631:720, 257:512)
+ (631:720, 1:90, 257:512)       (631:720, 631:720, 257:512)
+ (721:810, 1:90, 257:512)       (721:810, 631:720, 257:512)
+ (811:900, 1:90, 257:512)       (811:900, 631:720, 257:512)
+ (901:990, 1:90, 257:512)    …  (901:990, 631:720, 257:512)
+ (991:1080, 1:90, 257:512)      (991:1080, 631:720, 257:512)
+ (1081:1170, 1:90, 257:512)     (1081:1170, 631:720, 257:512)
+ (1171:1260, 1:90, 257:512)     (1171:1260, 631:720, 257:512)
+ (1261:1350, 1:90, 257:512)     (1261:1350, 631:720, 257:512)
+ (1351:1440, 1:90, 257:512)  …  (1351:1440, 631:720, 257:512)
+
+[:, :, 3] =
+ (1:90, 1:90, 513:768)       …  (1:90, 631:720, 513:768)
+ (91:180, 1:90, 513:768)        (91:180, 631:720, 513:768)
+ (181:270, 1:90, 513:768)       (181:270, 631:720, 513:768)
+ (271:360, 1:90, 513:768)       (271:360, 631:720, 513:768)
+ (361:450, 1:90, 513:768)       (361:450, 631:720, 513:768)
+ (451:540, 1:90, 513:768)    …  (451:540, 631:720, 513:768)
+ (541:630, 1:90, 513:768)       (541:630, 631:720, 513:768)
+ (631:720, 1:90, 513:768)       (631:720, 631:720, 513:768)
+ (721:810, 1:90, 513:768)       (721:810, 631:720, 513:768)
+ (811:900, 1:90, 513:768)       (811:900, 631:720, 513:768)
+ (901:990, 1:90, 513:768)    …  (901:990, 631:720, 513:768)
+ (991:1080, 1:90, 513:768)      (991:1080, 631:720, 513:768)
+ (1081:1170, 1:90, 513:768)     (1081:1170, 631:720, 513:768)
+ (1171:1260, 1:90, 513:768)     (1171:1260, 631:720, 513:768)
+ (1261:1350, 1:90, 513:768)     (1261:1350, 631:720, 513:768)
+ (1351:1440, 1:90, 513:768)  …  (1351:1440, 631:720, 513:768)
+
+[:, :, 4] =
+ (1:90, 1:90, 769:1024)       …  (1:90, 631:720, 769:1024)
+ (91:180, 1:90, 769:1024)        (91:180, 631:720, 769:1024)
+ (181:270, 1:90, 769:1024)       (181:270, 631:720, 769:1024)
+ (271:360, 1:90, 769:1024)       (271:360, 631:720, 769:1024)
+ (361:450, 1:90, 769:1024)       (361:450, 631:720, 769:1024)
+ (451:540, 1:90, 769:1024)    …  (451:540, 631:720, 769:1024)
+ (541:630, 1:90, 769:1024)       (541:630, 631:720, 769:1024)
+ (631:720, 1:90, 769:1024)       (631:720, 631:720, 769:1024)
+ (721:810, 1:90, 769:1024)       (721:810, 631:720, 769:1024)
+ (811:900, 1:90, 769:1024)       (811:900, 631:720, 769:1024)
+ (901:990, 1:90, 769:1024)    …  (901:990, 631:720, 769:1024)
+ (991:1080, 1:90, 769:1024)      (991:1080, 631:720, 769:1024)
+ (1081:1170, 1:90, 769:1024)     (1081:1170, 631:720, 769:1024)
+ (1171:1260, 1:90, 769:1024)     (1171:1260, 631:720, 769:1024)
+ (1261:1350, 1:90, 769:1024)     (1261:1350, 631:720, 769:1024)
+ (1351:1440, 1:90, 769:1024)  …  (1351:1440, 631:720, 769:1024)
+
+[:, :, 5] =
+ (1:90, 1:90, 1025:1280)       …  (1:90, 631:720, 1025:1280)
+ (91:180, 1:90, 1025:1280)        (91:180, 631:720, 1025:1280)
+ (181:270, 1:90, 1025:1280)       (181:270, 631:720, 1025:1280)
+ (271:360, 1:90, 1025:1280)       (271:360, 631:720, 1025:1280)
+ (361:450, 1:90, 1025:1280)       (361:450, 631:720, 1025:1280)
+ (451:540, 1:90, 1025:1280)    …  (451:540, 631:720, 1025:1280)
+ (541:630, 1:90, 1025:1280)       (541:630, 631:720, 1025:1280)
+ (631:720, 1:90, 1025:1280)       (631:720, 631:720, 1025:1280)
+ (721:810, 1:90, 1025:1280)       (721:810, 631:720, 1025:1280)
+ (811:900, 1:90, 1025:1280)       (811:900, 631:720, 1025:1280)
+ (901:990, 1:90, 1025:1280)    …  (901:990, 631:720, 1025:1280)
+ (991:1080, 1:90, 1025:1280)      (991:1080, 631:720, 1025:1280)
+ (1081:1170, 1:90, 1025:1280)     (1081:1170, 631:720, 1025:1280)
+ (1171:1260, 1:90, 1025:1280)     (1171:1260, 631:720, 1025:1280)
+ (1261:1350, 1:90, 1025:1280)     (1261:1350, 631:720, 1025:1280)
+ (1351:1440, 1:90, 1025:1280)  …  (1351:1440, 631:720, 1025:1280)
+
+[:, :, 6] =
+ (1:90, 1:90, 1281:1536)       …  (1:90, 631:720, 1281:1536)
+ (91:180, 1:90, 1281:1536)        (91:180, 631:720, 1281:1536)
+ (181:270, 1:90, 1281:1536)       (181:270, 631:720, 1281:1536)
+ (271:360, 1:90, 1281:1536)       (271:360, 631:720, 1281:1536)
+ (361:450, 1:90, 1281:1536)       (361:450, 631:720, 1281:1536)
+ (451:540, 1:90, 1281:1536)    …  (451:540, 631:720, 1281:1536)
+ (541:630, 1:90, 1281:1536)       (541:630, 631:720, 1281:1536)
+ (631:720, 1:90, 1281:1536)       (631:720, 631:720, 1281:1536)
+ (721:810, 1:90, 1281:1536)       (721:810, 631:720, 1281:1536)
+ (811:900, 1:90, 1281:1536)       (811:900, 631:720, 1281:1536)
+ (901:990, 1:90, 1281:1536)    …  (901:990, 631:720, 1281:1536)
+ (991:1080, 1:90, 1281:1536)      (991:1080, 631:720, 1281:1536)
+ (1081:1170, 1:90, 1281:1536)     (1081:1170, 631:720, 1281:1536)
+ (1171:1260, 1:90, 1281:1536)     (1171:1260, 631:720, 1281:1536)
+ (1261:1350, 1:90, 1281:1536)     (1261:1350, 631:720, 1281:1536)
+ (1351:1440, 1:90, 1281:1536)  …  (1351:1440, 631:720, 1281:1536)
+
+[:, :, 7] =
+ (1:90, 1:90, 1537:1792)       …  (1:90, 631:720, 1537:1792)
+ (91:180, 1:90, 1537:1792)        (91:180, 631:720, 1537:1792)
+ (181:270, 1:90, 1537:1792)       (181:270, 631:720, 1537:1792)
+ (271:360, 1:90, 1537:1792)       (271:360, 631:720, 1537:1792)
+ (361:450, 1:90, 1537:1792)       (361:450, 631:720, 1537:1792)
+ (451:540, 1:90, 1537:1792)    …  (451:540, 631:720, 1537:1792)
+ (541:630, 1:90, 1537:1792)       (541:630, 631:720, 1537:1792)
+ (631:720, 1:90, 1537:1792)       (631:720, 631:720, 1537:1792)
+ (721:810, 1:90, 1537:1792)       (721:810, 631:720, 1537:1792)
+ (811:900, 1:90, 1537:1792)       (811:900, 631:720, 1537:1792)
+ (901:990, 1:90, 1537:1792)    …  (901:990, 631:720, 1537:1792)
+ (991:1080, 1:90, 1537:1792)      (991:1080, 631:720, 1537:1792)
+ (1081:1170, 1:90, 1537:1792)     (1081:1170, 631:720, 1537:1792)
+ (1171:1260, 1:90, 1537:1792)     (1171:1260, 631:720, 1537:1792)
+ (1261:1350, 1:90, 1537:1792)     (1261:1350, 631:720, 1537:1792)
+ (1351:1440, 1:90, 1537:1792)  …  (1351:1440, 631:720, 1537:1792)
+
+[:, :, 8] =
+ (1:90, 1:90, 1793:1978)       …  (1:90, 631:720, 1793:1978)
+ (91:180, 1:90, 1793:1978)        (91:180, 631:720, 1793:1978)
+ (181:270, 1:90, 1793:1978)       (181:270, 631:720, 1793:1978)
+ (271:360, 1:90, 1793:1978)       (271:360, 631:720, 1793:1978)
+ (361:450, 1:90, 1793:1978)       (361:450, 631:720, 1793:1978)
+ (451:540, 1:90, 1793:1978)    …  (451:540, 631:720, 1793:1978)
+ (541:630, 1:90, 1793:1978)       (541:630, 631:720, 1793:1978)
+ (631:720, 1:90, 1793:1978)       (631:720, 631:720, 1793:1978)
+ (721:810, 1:90, 1793:1978)       (721:810, 631:720, 1793:1978)
+ (811:900, 1:90, 1793:1978)       (811:900, 631:720, 1793:1978)
+ (901:990, 1:90, 1793:1978)    …  (901:990, 631:720, 1793:1978)
+ (991:1080, 1:90, 1793:1978)      (991:1080, 631:720, 1793:1978)
+ (1081:1170, 1:90, 1793:1978)     (1081:1170, 631:720, 1793:1978)
+ (1171:1260, 1:90, 1793:1978)     (1171:1260, 631:720, 1793:1978)
+ (1261:1350, 1:90, 1793:1978)     (1261:1350, 631:720, 1793:1978)
+ (1351:1440, 1:90, 1793:1978)  …  (1351:1440, 631:720, 1793:1978)</code></pre>
+</div>
+</div>
+<div class="page-columns page-full"><p>As we notice, the box chunk is stored in small boxes 90x90x256. We cannot observe the spatial chunk size because only the last command line is displayed however it is 1x720x1440<a href="#fn1" class="footnote-ref" id="fnref1" role="doc-noteref"><sup>1</sup></a>. As we will discover later, these storage settings have different implications for data computation.</p><div class="no-row-height column-margin column-container"><li id="fn1"><p><sup>1</sup>&nbsp;The spatial chunk’s size is based on the spatial grid’s size. In this example the grid is 720 x 1440 pixels (a map layer). Conversely, The box chunk’s size is more flexible and set considering the target analyses.</p></li></div></div>
+</section>
+<section id="access-timing" class="level2">
+<h2 class="anchored" data-anchor-id="access-timing">Access timing</h2>
+<p>Now, let’s estimate the time requiered to access data along different axes</p>
+<div class="cell" data-execution_count="7">
+<div class="sourceCode cell-code" id="cb9"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="co"># spatial access (one map layer)</span></span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a><span class="pp">@time</span> xmap[<span class="op">:</span>,<span class="op">:</span>,<span class="fl">1</span>];</span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a><span class="co"># temporal access (time series)</span></span>
+<span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a><span class="pp">@time</span> xmap[<span class="fl">1</span>,<span class="fl">1</span>,<span class="op">:</span>];</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>  0.014920 seconds (91 allocations: 3.958 MiB)</code></pre>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code> 30.833593 seconds (88 allocations: 11.094 KiB)</code></pre>
+</div>
+</div>
+<p>As expected, for the spatial chunk (xmap), access along spatial strides is much faster than accessing time series because of the internal storage in the NetCDF file. In this particular case we can access a map layer a few hundred times faster than a time series.</p>
+<div class="cell" data-execution_count="8">
+<div class="sourceCode cell-code" id="cb12"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="co"># spatial access (one map layer)</span></span>
+<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a><span class="pp">@time</span> xbox[<span class="op">:</span>,<span class="op">:</span>,<span class="fl">1</span>];</span>
+<span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-4"><a href="#cb12-4" aria-hidden="true" tabindex="-1"></a><span class="co"># temporal access (time series)</span></span>
+<span id="cb12-5"><a href="#cb12-5" aria-hidden="true" tabindex="-1"></a><span class="pp">@time</span> xbox[<span class="fl">1</span>,<span class="fl">1</span>,<span class="op">:</span>];</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>  4.064510 seconds (91 allocations: 3.958 MiB)</code></pre>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>  0.285821 seconds (88 allocations: 11.094 KiB)</code></pre>
+</div>
+</div>
+<p>For the intermediate chunk (xbox), there is a good compromise between accessing the spatial and temporal axes. In this case, access to the temporal axis is faster than access to the spatial axis. These intermediate chunks are prefered when performing analyses in all axes.</p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+Take home message (1)
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>In summary, the time required to access geospatial data and time series varies depending on the characteristics of the chunks in the dataset. In this example, we found that:</p>
+<ul>
+<li>Spatial chunking can access spatial layers about a hundred times faster than time series.</li>
+<li>The box chunk provides a good tradeoff when analyses are required across all axes.</li>
+</ul>
+</div>
+</div>
+</section>
+</section>
+<section id="statistical-computation" class="level1">
+<h1>Statistical computation</h1>
+<p>Now, we want to compute the mean and median values for different chunks and across differente axes.Please, keep in mind that the computational resources needed for the mean and median are different. Specifically, the mean is a cumulative computation that does not requiered the entire data into memory. Contrary, the median needs to load and sort the entire data to be computed. using Statistics</p>
+<p>Our input variables is the same <em>air_temperature_2m</em> variable with two different chunk settings</p>
+<div class="cell" data-execution_count="9">
+<div class="sourceCode cell-code" id="cb15"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a>xmap <span class="co"># spatial chunking</span></span>
+<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a>xbox <span class="co"># intermediate chunking</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-display" data-execution_count="33">
+<pre><code>Disk Array with size 1440 x 720 x 1978</code></pre>
+</div>
+</div>
+<section id="mean" class="level2">
+<h2 class="anchored" data-anchor-id="mean">Mean</h2>
+<p>Our input data is stored as DiskArrays. DiskArrays.jl knows the internal chunking structure and provides special implementations for the mapreduce function used in the implementation of the mean for AbstractArray. The following two aggregations access each chunk only once:</p>
+<section id="mean-by-pixel" class="level3">
+<h3 class="anchored" data-anchor-id="mean-by-pixel">Mean by pixel</h3>
+<div class="cell" data-execution_count="10">
+<div class="sourceCode cell-code" id="cb17"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a><span class="im">using</span> <span class="bu">Statistics</span></span>
+<span id="cb17-2"><a href="#cb17-2" aria-hidden="true" tabindex="-1"></a><span class="pp">@time</span> xmean <span class="op">=</span> <span class="fu">mean</span>(xmap, dims<span class="op">=</span><span class="fl">3</span>);</span>
+<span id="cb17-3"><a href="#cb17-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb17-4"><a href="#cb17-4" aria-hidden="true" tabindex="-1"></a><span class="pp">@time</span> xmean2 <span class="op">=</span> <span class="fu">mean</span>(xbox,dims<span class="op">=</span><span class="fl">3</span>);</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code> 33.123254 seconds (196.04 k allocations: 7.652 GiB, 0.42% gc time)</code></pre>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code> 35.195180 seconds (97.49 k allocations: 7.648 GiB, 0.32% gc time)</code></pre>
+</div>
+</div>
+<div class="cell" data-execution_count="11">
+<div class="sourceCode cell-code" id="cb20"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb20-1"><a href="#cb20-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Plot results</span></span>
+<span id="cb20-2"><a href="#cb20-2" aria-hidden="true" tabindex="-1"></a><span class="co"># |label: fig-t2m_map_mean</span></span>
+<span id="cb20-3"><a href="#cb20-3" aria-hidden="true" tabindex="-1"></a><span class="co"># |fig-cap: "Multianual mean of air temperature at 2 m from 1979 to 2021 pixel-wise. The color map shows the temperature in degrees Celsius."</span></span>
+<span id="cb20-4"><a href="#cb20-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb20-5"><a href="#cb20-5" aria-hidden="true" tabindex="-1"></a><span class="fu">heatmap</span>(xaxisvalues, yaxisvalues, xmean[<span class="op">:</span>,<span class="op">:</span>]<span class="ch">',</span></span>
+<span id="cb20-6"><a href="#cb20-6" aria-hidden="true" tabindex="-1"></a> color<span class="op">=</span><span class="fu">cgrad</span>((<span class="op">:</span>roma), rev<span class="op">=</span><span class="cn">true</span>),</span>
+<span id="cb20-7"><a href="#cb20-7" aria-hidden="true" tabindex="-1"></a>title<span class="op">=</span><span class="fu">string</span>(<span class="st">"Mean "</span>,varname),</span>
+<span id="cb20-8"><a href="#cb20-8" aria-hidden="true" tabindex="-1"></a>xlabel<span class="op">=</span><span class="st">"Longitude"</span>, ylabel<span class="op">=</span><span class="st">"Latitude"</span>, zlabel<span class="op">=</span><span class="st">"Degrees"</span>,</span>
+<span id="cb20-9"><a href="#cb20-9" aria-hidden="true" tabindex="-1"></a>xtickfont<span class="op">=</span><span class="fu">font</span>(<span class="fl">12</span>), ytickfont<span class="op">=</span><span class="fu">font</span>(<span class="fl">12</span>), </span>
+<span id="cb20-10"><a href="#cb20-10" aria-hidden="true" tabindex="-1"></a>guidefont<span class="op">=</span><span class="fu">font</span>(<span class="fl">16</span>))</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-display" data-execution_count="35">
+<p><img src="chunking_demo_files/figure-html/cell-12-output-1.svg" class="img-fluid"></p>
+</div>
+</div>
+<p>Note that the computational time of the mean across all dimensions is similar regardless of the chunking.</p>
+</section>
+<section id="mean-by-time-step" class="level3">
+<h3 class="anchored" data-anchor-id="mean-by-time-step">Mean by time step</h3>
+<div class="cell" data-execution_count="12">
+<div class="sourceCode cell-code" id="cb21"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb21-1"><a href="#cb21-1" aria-hidden="true" tabindex="-1"></a><span class="pp">@time</span> tmean1 <span class="op">=</span> <span class="fu">mean</span>(xbox,dims<span class="op">=</span>(<span class="fl">1</span>,<span class="fl">2</span>));</span>
+<span id="cb21-2"><a href="#cb21-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-3"><a href="#cb21-3" aria-hidden="true" tabindex="-1"></a><span class="pp">@time</span> tmean2 <span class="op">=</span> <span class="fu">mean</span>(xmap, dims<span class="op">=</span>(<span class="fl">1</span>,<span class="fl">2</span>));</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code> 34.224725 seconds (97.51 k allocations: 7.644 GiB, 0.37% gc time)</code></pre>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code> 32.459024 seconds (196.05 k allocations: 7.648 GiB, 0.30% gc time)</code></pre>
+</div>
+</div>
+<div class="cell" data-execution_count="13">
+<div class="sourceCode cell-code" id="cb24"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb24-1"><a href="#cb24-1" aria-hidden="true" tabindex="-1"></a><span class="co"># time series of air temperature 2 m for all pixels</span></span>
+<span id="cb24-2"><a href="#cb24-2" aria-hidden="true" tabindex="-1"></a><span class="fu">plot</span>(t, tmean1[<span class="fl">1519</span><span class="op">:</span><span class="kw">end</span>], lw<span class="op">=</span><span class="fl">1.5</span>, color<span class="op">=:</span>brown,</span>
+<span id="cb24-3"><a href="#cb24-3" aria-hidden="true" tabindex="-1"></a>legend<span class="op">=:</span><span class="cn">false</span>, ylim<span class="op">=</span>(<span class="fl">0</span>,<span class="fl">10</span>),</span>
+<span id="cb24-4"><a href="#cb24-4" aria-hidden="true" tabindex="-1"></a>ylabel<span class="op">=</span><span class="st">"Air temperature (°C)"</span>, xlabel<span class="op">=</span><span class="st">"Time (MM-YY)"</span>,</span>
+<span id="cb24-5"><a href="#cb24-5" aria-hidden="true" tabindex="-1"></a>xticks<span class="op">=</span>(t[<span class="fl">1</span><span class="op">:</span><span class="fl">100</span><span class="op">:</span><span class="kw">end</span>],dict2[<span class="fl">1</span><span class="op">:</span><span class="fl">100</span><span class="op">:</span><span class="kw">end</span>]),</span>
+<span id="cb24-6"><a href="#cb24-6" aria-hidden="true" tabindex="-1"></a>xtickfont<span class="op">=</span><span class="fu">font</span>(<span class="fl">12</span>), ytickfont<span class="op">=</span><span class="fu">font</span>(<span class="fl">12</span>), </span>
+<span id="cb24-7"><a href="#cb24-7" aria-hidden="true" tabindex="-1"></a>guidefont<span class="op">=</span><span class="fu">font</span>(<span class="fl">16</span>)) <span class="co"># location of tickmarks and values)</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-display" data-execution_count="37">
+<div id="fig-ts_plot2_mean" class="quarto-figure quarto-figure-center anchored">
+<figure class="figure">
+<p><img src="chunking_demo_files/figure-html/fig-ts_plot2_mean-output-1.svg" class="img-fluid figure-img"></p>
+<p></p><figcaption class="figure-caption">Figure&nbsp;3: Global mean of time series of air temperature at 2 m from Jan-2012 to Dec-21.</figcaption><p></p>
+</figure>
+</div>
+</div>
+</div>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+Take home message (2)
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>In the case of the mean, the computation time is similar regardless of the chunking properties and used axes. This is due to the fact that the mean is a cumulative opperation and does not need to load the entire data set. Additionally, this computation is properly handle it by DiskArrays.jl</p>
+</div>
+</div>
+</section>
+</section>
+<section id="median" class="level2">
+<h2 class="anchored" data-anchor-id="median">Median</h2>
+<section id="median-by-pixel" class="level3">
+<h3 class="anchored" data-anchor-id="median-by-pixel">Median by pixel</h3>
+<p>This gets more difficult for the median, because here we need the full time series in memory. This makes it impossible to compute the median in a single pass. Let’s try this on a small subset.</p>
+<div class="cell" data-execution_count="14">
+<div class="sourceCode cell-code" id="cb25"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb25-1"><a href="#cb25-1" aria-hidden="true" tabindex="-1"></a><span class="co"># subset spatial chunking</span></span>
+<span id="cb25-2"><a href="#cb25-2" aria-hidden="true" tabindex="-1"></a>sub1 <span class="op">=</span> <span class="fu">view</span>(xmap,<span class="fl">1</span><span class="op">:</span><span class="fl">2</span>, <span class="fl">1</span><span class="op">:</span><span class="fl">2</span>,<span class="op">:</span>)</span>
+<span id="cb25-3"><a href="#cb25-3" aria-hidden="true" tabindex="-1"></a>out1 <span class="op">=</span> <span class="fu">zeros</span>(<span class="fu">size</span>(sub1,<span class="fl">1</span>),<span class="fu">size</span>(sub1,<span class="fl">2</span>));</span>
+<span id="cb25-4"><a href="#cb25-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb25-5"><a href="#cb25-5" aria-hidden="true" tabindex="-1"></a><span class="co"># Note: this way of reading the data is used for demostrative purposes, </span></span>
+<span id="cb25-6"><a href="#cb25-6" aria-hidden="true" tabindex="-1"></a><span class="co"># but keep in mind that is very unefficient looping through the dataset. </span></span>
+<span id="cb25-7"><a href="#cb25-7" aria-hidden="true" tabindex="-1"></a><span class="co"># more efficient approaches are mentioned at the end.</span></span>
+<span id="cb25-8"><a href="#cb25-8" aria-hidden="true" tabindex="-1"></a><span class="pp">@time</span> <span class="cf">for</span> ilat <span class="kw">in</span> <span class="fu">axes</span>(sub1,<span class="fl">2</span>), ilon <span class="kw">in</span> <span class="fu">axes</span>(sub1,<span class="fl">1</span>)</span>
+<span id="cb25-9"><a href="#cb25-9" aria-hidden="true" tabindex="-1"></a>    out1[ilon,ilat] <span class="op">=</span> <span class="fu">median</span>(sub1[ilon,ilat,<span class="op">:</span>])</span>
+<span id="cb25-10"><a href="#cb25-10" aria-hidden="true" tabindex="-1"></a><span class="cf">end</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>116.899065 seconds (382 allocations: 77.234 KiB)</code></pre>
+</div>
+</div>
+<p>This already takes ages with 4 grid cells when working with spatial chunking. For this calculation it would be better to read e.g.&nbsp;approx. 1 GB of data each time and perform the calculations one after the other as we show later.</p>
+<div class="cell" data-execution_count="15">
+<div class="sourceCode cell-code" id="cb27"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb27-1"><a href="#cb27-1" aria-hidden="true" tabindex="-1"></a><span class="co"># subset box chunking</span></span>
+<span id="cb27-2"><a href="#cb27-2" aria-hidden="true" tabindex="-1"></a>sub2 <span class="op">=</span> <span class="fu">view</span>(xbox,<span class="fl">1</span><span class="op">:</span><span class="fl">2</span>, <span class="fl">1</span><span class="op">:</span><span class="fl">2</span>,<span class="op">:</span>)</span>
+<span id="cb27-3"><a href="#cb27-3" aria-hidden="true" tabindex="-1"></a>out2 <span class="op">=</span> <span class="fu">zeros</span>(<span class="fu">size</span>(sub2,<span class="fl">1</span>),<span class="fu">size</span>(sub2,<span class="fl">2</span>))</span>
+<span id="cb27-4"><a href="#cb27-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-5"><a href="#cb27-5" aria-hidden="true" tabindex="-1"></a><span class="pp">@time</span> <span class="cf">for</span> ilat <span class="kw">in</span> <span class="fu">axes</span>(sub2,<span class="fl">2</span>), ilon <span class="kw">in</span> <span class="fu">axes</span>(sub2,<span class="fl">1</span>)</span>
+<span id="cb27-6"><a href="#cb27-6" aria-hidden="true" tabindex="-1"></a>    out2[ilon,ilat] <span class="op">=</span> <span class="fu">median</span>(sub2[ilon,ilat,<span class="op">:</span>])</span>
+<span id="cb27-7"><a href="#cb27-7" aria-hidden="true" tabindex="-1"></a><span class="cf">end</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>  1.033569 seconds (382 allocations: 77.234 KiB)</code></pre>
+</div>
+</div>
+<p>Regarding the subset with the box chunking, the computation runs much more faster. This is explained becuase this chunk is more suitable to access time series. Here we compare and see that both results are exactly the same</p>
+<div class="cell" data-execution_count="16">
+<div class="sourceCode cell-code" id="cb29"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb29-1"><a href="#cb29-1" aria-hidden="true" tabindex="-1"></a>out1</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-display" data-execution_count="40">
+<pre><code>2×2 Matrix{Float64}:
+ -48.8034  -49.0315
+ -48.8035  -49.0294</code></pre>
+</div>
+</div>
+<div class="cell" data-execution_count="17">
+<div class="sourceCode cell-code" id="cb31"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb31-1"><a href="#cb31-1" aria-hidden="true" tabindex="-1"></a>out2</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-display" data-execution_count="41">
+<pre><code>2×2 Matrix{Float64}:
+ -48.8034  -49.0315
+ -48.8035  -49.0294</code></pre>
+</div>
+</div>
+<p>One way to deal with these inefficient calculations is to read the data in blocks. This means that a block is read and the calculation immediately follows. In this way, one block after the other is read and calculated until all the data has been read and calculated. In this way, the calculation becomes more efficient.</p>
+<div class="cell" data-execution_count="18">
+<div class="sourceCode cell-code" id="cb33"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb33-1"><a href="#cb33-1" aria-hidden="true" tabindex="-1"></a><span class="co"># here we fix latitude ranges that will be used to read the data in blocks</span></span>
+<span id="cb33-2"><a href="#cb33-2" aria-hidden="true" tabindex="-1"></a>out3 <span class="op">=</span> <span class="fu">zeros</span>(<span class="fu">size</span>(xmap,<span class="fl">1</span>),<span class="fu">size</span>(xmap,<span class="fl">2</span>))</span>
+<span id="cb33-3"><a href="#cb33-3" aria-hidden="true" tabindex="-1"></a>latsteps <span class="op">=</span> <span class="fl">90</span></span>
+<span id="cb33-4"><a href="#cb33-4" aria-hidden="true" tabindex="-1"></a>latranges <span class="op">=</span> [(i<span class="op">*</span><span class="fl">90</span><span class="op">-</span>latsteps<span class="op">+</span><span class="fl">1</span>)<span class="op">:</span>(i<span class="op">*</span><span class="fl">90</span>) for i <span class="kw">in</span> <span class="fl">1</span><span class="op">:</span>(<span class="fl">720</span><span class="op">÷</span>latsteps)]</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-display" data-execution_count="42">
+<pre><code>8-element Vector{UnitRange{Int64}}:
+ 1:90
+ 91:180
+ 181:270
+ 271:360
+ 361:450
+ 451:540
+ 541:630
+ 631:720</code></pre>
+</div>
+</div>
+<div class="cell" data-execution_count="19">
+<div class="sourceCode cell-code" id="cb35"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb35-1"><a href="#cb35-1" aria-hidden="true" tabindex="-1"></a><span class="im">using</span> <span class="bu">ProgressMeter</span></span>
+<span id="cb35-2"><a href="#cb35-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb35-3"><a href="#cb35-3" aria-hidden="true" tabindex="-1"></a><span class="pp">@showprogress</span> <span class="cf">for</span> ilat <span class="kw">in</span> latranges</span>
+<span id="cb35-4"><a href="#cb35-4" aria-hidden="true" tabindex="-1"></a>    out3[<span class="op">:</span>,ilat] <span class="op">=</span> <span class="fu">median</span>(xmap[<span class="op">:</span>,ilat,<span class="op">:</span>],dims<span class="op">=</span><span class="fl">3</span>)</span>
+<span id="cb35-5"><a href="#cb35-5" aria-hidden="true" tabindex="-1"></a><span class="cf">end</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Progress:  25%|██████████▎                              |  ETA: 0:03:29</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Progress:  38%|███████████████▍                         |  ETA: 0:02:53</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Progress:  50%|████████████████████▌                    |  ETA: 0:02:18</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Progress:  62%|█████████████████████████▋               |  ETA: 0:01:43</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Progress:  75%|██████████████████████████████▊          |  ETA: 0:01:09</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Progress:  88%|███████████████████████████████████▉     |  ETA: 0:00:34</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Progress: 100%|█████████████████████████████████████████| Time: 0:04:35</code></pre>
+</div>
+</div>
+<div class="cell" data-execution_count="20">
+<div class="sourceCode cell-code" id="cb43"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb43-1"><a href="#cb43-1" aria-hidden="true" tabindex="-1"></a>out4 <span class="op">=</span> <span class="fu">zeros</span>(<span class="fu">size</span>(xbox,<span class="fl">1</span>),<span class="fu">size</span>(xbox,<span class="fl">2</span>));</span>
+<span id="cb43-2"><a href="#cb43-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb43-3"><a href="#cb43-3" aria-hidden="true" tabindex="-1"></a><span class="pp">@showprogress</span> <span class="cf">for</span> ilat <span class="kw">in</span> latranges</span>
+<span id="cb43-4"><a href="#cb43-4" aria-hidden="true" tabindex="-1"></a>    out4[<span class="op">:</span>,ilat] <span class="op">=</span> <span class="fu">median</span>(xbox[<span class="op">:</span>,ilat,<span class="op">:</span>],dims<span class="op">=</span><span class="fl">3</span>)</span>
+<span id="cb43-5"><a href="#cb43-5" aria-hidden="true" tabindex="-1"></a><span class="cf">end</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Progress:  25%|██████████▎                              |  ETA: 0:01:07</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Progress:  38%|███████████████▍                         |  ETA: 0:00:54</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Progress:  50%|████████████████████▌                    |  ETA: 0:00:43</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Progress:  62%|█████████████████████████▋               |  ETA: 0:00:32</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Progress:  75%|██████████████████████████████▊          |  ETA: 0:00:21</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Progress:  88%|███████████████████████████████████▉     |  ETA: 0:00:11</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Progress: 100%|█████████████████████████████████████████| Time: 0:01:25</code></pre>
+</div>
+</div>
+<p>In general, results are obtained from the entire dataset in a reasonable time for both chunks. Nevertheless, we find that chunking by boxes is again more efficient than chunking by maps. Alternatively, we can use YAXArrays.jl, which performs exactly this workflow for a given cache size (see last section).</p>
+<div class="cell" data-execution_count="21">
+<div class="sourceCode cell-code" id="cb51"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb51-1"><a href="#cb51-1" aria-hidden="true" tabindex="-1"></a><span class="co"># plot results</span></span>
+<span id="cb51-2"><a href="#cb51-2" aria-hidden="true" tabindex="-1"></a><span class="fu">heatmap</span>(xaxisvalues, yaxisvalues, out3[<span class="op">:</span>,<span class="op">:</span>]<span class="ch">', color=cgrad((:roma), rev=true),</span></span>
+<span id="cb51-3"><a href="#cb51-3" aria-hidden="true" tabindex="-1"></a>title<span class="op">=</span><span class="fu">string</span>(<span class="st">"Median "</span>,varname),</span>
+<span id="cb51-4"><a href="#cb51-4" aria-hidden="true" tabindex="-1"></a>xlabel<span class="op">=</span><span class="st">"Longitude"</span>, ylabel<span class="op">=</span><span class="st">"Latitude"</span>, zlabel<span class="op">=</span><span class="st">"Degrees"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-display" data-execution_count="45">
+<p><img src="chunking_demo_files/figure-html/cell-22-output-1.svg" class="img-fluid"></p>
+</div>
+</div>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+Take home message (3)
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>Our last remarks are: <em>Chunking is critical for efficient data access when the entire data set cannot be loaded into memory. </em>Calculations such as the mean are not affected by chunking if an appropriate library and code are used. *To ensure optimal performance for all operations, an appropriate chunking size should be chosen considering the type of analyses and required dimmensions.</p>
+</div>
+</div>
+<p>As a final <strong>note</strong>, there are already libraries that efficiently deal with data partitioning and processing, one example is YAXArrays (<a href="https://github.com/JuliaDataCubes/YAXArrays.jl" class="uri">https://github.com/JuliaDataCubes/YAXArrays.jl</a>). These libraries contribute significantly to improve processing performance but full efficieny is only achieved when considering chunking.</p>
+<p>A short sintax for the median example using YAXArrays is: <br></p>
+<div class="sourceCode" id="cb52"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb52-1"><a href="#cb52-1" aria-hidden="true" tabindex="-1"></a>ds <span class="op">=</span> <span class="fu">open_dataset</span>(<span class="fu">string</span>(pathin,<span class="st">"t2_map.nc"</span>))</span>
+<span id="cb52-2"><a href="#cb52-2" aria-hidden="true" tabindex="-1"></a>ds.layer  </span>
+<span id="cb52-3"><a href="#cb52-3" aria-hidden="true" tabindex="-1"></a>medtair <span class="op">=</span> <span class="fu">mapslices</span>(median, ds.layer, dims<span class="op">=</span><span class="st">"Time"</span>, max_cache<span class="op">=</span><span class="fl">1e9</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</section>
+</section>
+</section>
+
+
+</main>
+<!-- /main column -->
+<script id="quarto-html-after-body" type="application/javascript">
+window.document.addEventListener("DOMContentLoaded", function (event) {
+  const toggleBodyColorMode = (bsSheetEl) => {
+    const mode = bsSheetEl.getAttribute("data-mode");
+    const bodyEl = window.document.querySelector("body");
+    if (mode === "dark") {
+      bodyEl.classList.add("quarto-dark");
+      bodyEl.classList.remove("quarto-light");
+    } else {
+      bodyEl.classList.add("quarto-light");
+      bodyEl.classList.remove("quarto-dark");
+    }
+  }
+  const toggleBodyColorPrimary = () => {
+    const bsSheetEl = window.document.querySelector("link#quarto-bootstrap");
+    if (bsSheetEl) {
+      toggleBodyColorMode(bsSheetEl);
+    }
+  }
+  toggleBodyColorPrimary();  
+  const icon = "";
+  const anchorJS = new window.AnchorJS();
+  anchorJS.options = {
+    placement: 'right',
+    icon: icon
+  };
+  anchorJS.add('.anchored');
+  const isCodeAnnotation = (el) => {
+    for (const clz of el.classList) {
+      if (clz.startsWith('code-annotation-')) {                     
+        return true;
+      }
+    }
+    return false;
+  }
+  const clipboard = new window.ClipboardJS('.code-copy-button', {
+    text: function(trigger) {
+      const codeEl = trigger.previousElementSibling.cloneNode(true);
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+  });
+  clipboard.on('success', function(e) {
+    // button target
+    const button = e.trigger;
+    // don't keep focus
+    button.blur();
+    // flash "checked"
+    button.classList.add('code-copy-button-checked');
+    var currentTitle = button.getAttribute("title");
+    button.setAttribute("title", "Copied!");
+    let tooltip;
+    if (window.bootstrap) {
+      button.setAttribute("data-bs-toggle", "tooltip");
+      button.setAttribute("data-bs-placement", "left");
+      button.setAttribute("data-bs-title", "Copied!");
+      tooltip = new bootstrap.Tooltip(button, 
+        { trigger: "manual", 
+          customClass: "code-copy-button-tooltip",
+          offset: [0, -8]});
+      tooltip.show();    
+    }
+    setTimeout(function() {
+      if (tooltip) {
+        tooltip.hide();
+        button.removeAttribute("data-bs-title");
+        button.removeAttribute("data-bs-toggle");
+        button.removeAttribute("data-bs-placement");
+      }
+      button.setAttribute("title", currentTitle);
+      button.classList.remove('code-copy-button-checked');
+    }, 1000);
+    // clear code selection
+    e.clearSelection();
+  });
+  function tippyHover(el, contentFn) {
+    const config = {
+      allowHTML: true,
+      content: contentFn,
+      maxWidth: 500,
+      delay: 100,
+      arrow: false,
+      appendTo: function(el) {
+          return el.parentElement;
+      },
+      interactive: true,
+      interactiveBorder: 10,
+      theme: 'quarto',
+      placement: 'bottom-start'
+    };
+    window.tippy(el, config); 
+  }
+  const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+  for (var i=0; i<noterefs.length; i++) {
+    const ref = noterefs[i];
+    tippyHover(ref, function() {
+      // use id or data attribute instead here
+      let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+      try { href = new URL(href).hash; } catch {}
+      const id = href.replace(/^#\/?/, "");
+      const note = window.document.getElementById(id);
+      return note.innerHTML;
+    });
+  }
+      let selectedAnnoteEl;
+      const selectorForAnnotation = ( cell, annotation) => {
+        let cellAttr = 'data-code-cell="' + cell + '"';
+        let lineAttr = 'data-code-annotation="' +  annotation + '"';
+        const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+        return selector;
+      }
+      const selectCodeLines = (annoteEl) => {
+        const doc = window.document;
+        const targetCell = annoteEl.getAttribute("data-target-cell");
+        const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+        const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+        const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+        const lineIds = lines.map((line) => {
+          return targetCell + "-" + line;
+        })
+        let top = null;
+        let height = null;
+        let parent = null;
+        if (lineIds.length > 0) {
+            //compute the position of the single el (top and bottom and make a div)
+            const el = window.document.getElementById(lineIds[0]);
+            top = el.offsetTop;
+            height = el.offsetHeight;
+            parent = el.parentElement.parentElement;
+          if (lineIds.length > 1) {
+            const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+            const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+            height = bottom - top;
+          }
+          if (top !== null && height !== null && parent !== null) {
+            // cook up a div (if necessary) and position it 
+            let div = window.document.getElementById("code-annotation-line-highlight");
+            if (div === null) {
+              div = window.document.createElement("div");
+              div.setAttribute("id", "code-annotation-line-highlight");
+              div.style.position = 'absolute';
+              parent.appendChild(div);
+            }
+            div.style.top = top - 2 + "px";
+            div.style.height = height + 4 + "px";
+            let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+            if (gutterDiv === null) {
+              gutterDiv = window.document.createElement("div");
+              gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+              gutterDiv.style.position = 'absolute';
+              const codeCell = window.document.getElementById(targetCell);
+              const gutter = codeCell.querySelector('.code-annotation-gutter');
+              gutter.appendChild(gutterDiv);
+            }
+            gutterDiv.style.top = top - 2 + "px";
+            gutterDiv.style.height = height + 4 + "px";
+          }
+          selectedAnnoteEl = annoteEl;
+        }
+      };
+      const unselectCodeLines = () => {
+        const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+        elementsIds.forEach((elId) => {
+          const div = window.document.getElementById(elId);
+          if (div) {
+            div.remove();
+          }
+        });
+        selectedAnnoteEl = undefined;
+      };
+      // Attach click handler to the DT
+      const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+      for (const annoteDlNode of annoteDls) {
+        annoteDlNode.addEventListener('click', (event) => {
+          const clickedEl = event.target;
+          if (clickedEl !== selectedAnnoteEl) {
+            unselectCodeLines();
+            const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+            if (activeEl) {
+              activeEl.classList.remove('code-annotation-active');
+            }
+            selectCodeLines(clickedEl);
+            clickedEl.classList.add('code-annotation-active');
+          } else {
+            // Unselect the line
+            unselectCodeLines();
+            clickedEl.classList.remove('code-annotation-active');
+          }
+        });
+      }
+  const findCites = (el) => {
+    const parentEl = el.parentElement;
+    if (parentEl) {
+      const cites = parentEl.dataset.cites;
+      if (cites) {
+        return {
+          el,
+          cites: cites.split(' ')
+        };
+      } else {
+        return findCites(el.parentElement)
+      }
+    } else {
+      return undefined;
+    }
+  };
+  var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+  for (var i=0; i<bibliorefs.length; i++) {
+    const ref = bibliorefs[i];
+    const citeInfo = findCites(ref);
+    if (citeInfo) {
+      tippyHover(citeInfo.el, function() {
+        var popup = window.document.createElement('div');
+        citeInfo.cites.forEach(function(cite) {
+          var citeDiv = window.document.createElement('div');
+          citeDiv.classList.add('hanging-indent');
+          citeDiv.classList.add('csl-entry');
+          var biblioDiv = window.document.getElementById('ref-' + cite);
+          if (biblioDiv) {
+            citeDiv.innerHTML = biblioDiv.innerHTML;
+          }
+          popup.appendChild(citeDiv);
+        });
+        return popup.innerHTML;
+      });
+    }
+  }
+});
+</script>
+</div> <!-- /content -->
+
+
+
+</body></html>
